@@ -41,9 +41,5 @@ db.<collection>.find( {} )
 # setup python mongo packages
 pip3 install paho-mqtt python-etcd pymongo datetime timestamp
 
-# Run script in background (using python3)
-nohup python3 DataBrokerProd.py &
-
-
 
 
