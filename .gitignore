@@ -4,7 +4,8 @@
 .dbshell
 .python_history
 .sudo_as_admin_successful
-DataBroker/nohup.out
+.bashrc
+nohup.out
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
