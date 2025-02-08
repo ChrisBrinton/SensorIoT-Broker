@@ -29,6 +29,8 @@ show collections
 # select all document in the collection
 db.<collection>.find( {} )
 
+# list gateways that have published
+db.SensorsLatest.distinct("gateway_id", {})
 
 ### Linux setup
 # mongo install location

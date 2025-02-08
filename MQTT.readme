@@ -22,7 +22,7 @@ sudo apt-get install mosquitto
 /var/log/mosquitto/mosquitto.log
 
 - Start process:
-sudo /usr/sbin/mosquitto -C /etc/mosquitto/mosquitto.conf -d
+sudo /usr/sbin/mosquitto -c /etc/mosquitto/mosquitto.conf -d
 
 - Determine if the mosquitto process is running:
 ps -ef | grep mosquitto
