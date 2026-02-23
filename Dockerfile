@@ -27,7 +27,7 @@ COPY ./startup.sh /
 
 # final configuration
 #ENV FLASK_APP=hello
-EXPOSE 1884
+EXPOSE 1883 1884
 #CMD ["pipenv" , "run", "python3" , "DataBroker.py" , "--db", "PROD"]
 #CMD ["python3" , "DataBroker.py" , "--db", "PROD"]
 CMD ["./startup.sh"]

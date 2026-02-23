@@ -8,8 +8,12 @@ https://docs.mongodb.com/manual/tutorial/
 # database location 
 c:\users\hlotyaks\mongo\database
 
+
+sudo dpkg -i mongodb-org-server_8.0.4_amd64.deb
+
 # to start mongo and listen
 mongod -dbpath c:\users\hlotyaks\mongo\database
+sudo systemctl start mongod
 
 # test data base
 gdtechdb-test

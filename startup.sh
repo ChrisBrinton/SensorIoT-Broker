@@ -3,7 +3,7 @@
 mosquitto  -v -c /mosquitto.conf -d 
 
 #python3 DataBroker.py --dbconn host.docker.internal:27017 --host 127.0.0.1 --port 1883 &
-python3 DataBroker.py --dbconn 127.0.0.1:27017 --host localhost  --port 1883 --log true > /var/log/broker.log  &
+python3 DataBroker.py --dbconn 127.0.0.1:27017 --host localhost  --port 1883 --log  > broker.log 2>&1 
 
 # Wait for any process to exit
 wait -n

@@ -109,3 +109,8 @@ ENV/
 
 # mypy
 .mypy_cache/
+
+# Project-specific artifacts
+*.deb
+*.BAK
+*.new
