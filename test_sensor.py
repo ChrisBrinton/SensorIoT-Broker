@@ -57,7 +57,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--interval",
         type=float,
-        default=10.0,
+        default=600.0,
         help="Seconds between publish cycles",
     )
     p.add_argument(
