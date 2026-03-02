@@ -114,3 +114,5 @@ ENV/
 *.deb
 *.BAK
 *.new
+
+priv*.pem
