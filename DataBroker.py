@@ -20,13 +20,14 @@ def on_message(client, userdata, msg):
   elements = msg.topic.split('/')
   
   if (len(elements) == 6):
+      value = msg.payload.decode('utf-8').strip()
       db.Sensors.insert_one(
           {
             "model":elements[1],
             "gateway_id":elements[2],
             "node_id":elements[3],
             "type":elements[4],
-            "value": str(msg.payload),
+            "value": value,
             "time": datetime.datetime.timestamp(datetime.datetime.now())
           })
       db.SensorsLatest.update_one(
@@ -36,7 +37,7 @@ def on_message(client, userdata, msg):
             "gateway_id":elements[2],
             "node_id":elements[3],
             "type":elements[4],
-            "value": str(msg.payload),
+            "value": value,
             "time": datetime.datetime.timestamp(datetime.datetime.now())
             }
           },
