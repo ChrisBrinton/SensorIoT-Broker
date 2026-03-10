@@ -260,6 +260,94 @@ def _fire_alert(db, email: str, firebase_available: bool, title: str, body: str)
     )
 
 
+def _check_baseline_forecast_alert(
+    db,
+    user: dict,
+    periods: list,
+    firebase_available: bool,
+) -> None:
+    """
+    Compare the next _LOOKAHEAD_HOURS hours of NOAA forecast against the
+    outside sensor's baseline ±2σ band. Fires a push notification if any
+    forecast period falls outside the expected range.
+
+    Uses a separate 6-hour cooldown key (last_baseline_forecast_alert_sent)
+    so it doesn't interfere with frost/heat/cold-front alerts.
+    """
+    if not user.get('baseline_forecast_alert_enabled'):
+        return
+
+    email             = user.get('email', '')
+    gateway_id        = user.get('gateway_id')
+    outside_sensor_id = user.get('outside_sensor_id')
+    if not gateway_id or not outside_sensor_id:
+        return
+
+    last_sent = user.get('last_baseline_forecast_alert_sent', 0) or 0
+    if time.time() - last_sent < _ALERT_COOLDOWN_SECONDS:
+        print(f'[NOAA] Baseline forecast alert cooldown active for {email}, skipping.')
+        return
+
+    # Fetch baseline buckets for the outside sensor (temperature only)
+    buckets = list(db.Baselines.find({
+        'gateway_id': gateway_id,
+        'node_id': outside_sensor_id,
+        'type': 'F',
+    }))
+    if not buckets:
+        print(f'[NOAA] No baseline for {gateway_id}/{outside_sensor_id}/F — skipping.')
+        return
+
+    # Build lookup: (hour_utc, day_of_week) → bucket
+    # Baselines are keyed by MongoDB $dayOfWeek (1=Sun … 7=Sat, UTC-based).
+    bucket_map = {(b['hour'], b['day_of_week']): b for b in buckets}
+
+    now_ts        = time.time()
+    lookahead_end = now_ts + _LOOKAHEAD_HOURS * 3600
+
+    for period in periods:
+        ts   = period_start_unix(period)
+        temp = period_temp_f(period)
+        if temp is None or ts <= now_ts or ts > lookahead_end:
+            continue
+
+        # Convert to UTC datetime for hour-of-week lookup (same convention as DB)
+        dt_utc = datetime.datetime.utcfromtimestamp(ts)
+        # Python weekday(): 0=Mon … 6=Sun  →  MongoDB $dayOfWeek: 1=Sun … 7=Sat
+        dow  = (dt_utc.weekday() + 1) % 7 + 1
+        hour = dt_utc.hour
+
+        bucket = bucket_map.get((hour, dow))
+        if bucket is None:
+            continue
+        mean = float(bucket.get('mean', 0))
+        std  = float(bucket.get('std',  0))
+        if std < 0.1:
+            continue  # near-flat signal, skip
+
+        if temp < mean - 2 * std or temp > mean + 2 * std:
+            lo  = mean - 2 * std
+            hi  = mean + 2 * std
+            dir_word = 'above' if temp > hi else 'below'
+            time_str = dt_utc.strftime('%a %-I%p').lower()  # e.g. "mon 3pm"
+            body = (
+                f'Forecast of {temp:.0f}°F at {time_str} (UTC) is {dir_word} the '
+                f'expected range of {lo:.0f}–{hi:.0f}°F for that hour.'
+            )
+            print(f'[NOAA] Baseline forecast alert for {email}: {temp}°F outside [{lo:.1f}, {hi:.1f}]')
+
+            if firebase_available:
+                token_docs = list(db.DeviceTokens.find({'email': email}, {'token': 1}))
+                tokens = [d['token'] for d in token_docs if d.get('token')]
+                _send_fcm_push(tokens, 'Unusual Weather Forecast', body)
+
+            db.NOAASettings.update_one(
+                {'email': email},
+                {'$set': {'last_baseline_forecast_alert_sent': time.time()}},
+            )
+            return  # one notification per run is enough
+
+
 # ---------------------------------------------------------------------------
 # Main run loop
 # ---------------------------------------------------------------------------
@@ -298,6 +386,10 @@ def run_once(db, firebase_available: bool = False) -> None:
         # Predictive alerts (opt-in per user)
         if user.get('predictive_alerts_enabled'):
             _check_predictive_alerts(db, user, periods, firebase_available)
+
+        # Baseline forecast alert (opt-in per user)
+        if user.get('baseline_forecast_alert_enabled'):
+            _check_baseline_forecast_alert(db, user, periods, firebase_available)
 
 
 def main():

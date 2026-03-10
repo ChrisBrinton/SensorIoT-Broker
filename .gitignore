@@ -116,3 +116,4 @@ ENV/
 *.new
 
 priv*.pem
+*.json

@@ -20,6 +20,9 @@ import time
 import requests
 import pymongo as mongodb
 
+# Cooldown for baseline actual alerts per sensor (minutes)
+_BASELINE_ACTUAL_COOLDOWN_MINUTES = 60
+
 # Firebase Admin SDK is optional — import lazily so the script still runs
 # (in read-only / webhook-only mode) if firebase_admin is not installed.
 try:
@@ -214,6 +217,118 @@ def _evaluate_rule(db, rule: dict) -> tuple[bool, float | None]:
     return op_fn(current_value, float(threshold)), current_value
 
 
+def _parse_sensor_value(raw) -> float | None:
+    """Parse a raw sensor value from SensorsLatest (handles legacy b'...' encoding)."""
+    try:
+        s = str(raw).strip()
+        if s.startswith("b'") and s.endswith("'"):
+            s = s[2:-1]
+        return float(s)
+    except (ValueError, TypeError):
+        return None
+
+
+def _check_baseline_actual_alerts(db, firebase_available: bool) -> None:
+    """
+    For each user with baseline_actual_alert_enabled=True, compare each sensor's
+    current reading against its baseline ±2σ band. Fires a push notification per
+    sensor that is outside the band, subject to a per-sensor cooldown.
+
+    Cooldown state is persisted in NOAASettings.baseline_actual_cooldowns as a
+    dict of {"node_id|type": unix_timestamp_of_last_fire}.
+    """
+    now = time.time()
+    settings_list = list(db.NOAASettings.find({'baseline_actual_alert_enabled': True}))
+    if not settings_list:
+        return
+
+    print(f'[Alert] Checking baseline actual alerts for {len(settings_list)} user(s)')
+
+    for user in settings_list:
+        email      = user.get('email', '')
+        gateway_id = user.get('gateway_id')
+        if not gateway_id:
+            continue
+
+        # Per-sensor cooldown dict (persisted in MongoDB)
+        cooldowns = dict(user.get('baseline_actual_cooldowns') or {})
+
+        # Fetch all baseline buckets for this gateway
+        baselines = list(db.Baselines.find({'gateway_id': gateway_id}))
+        if not baselines:
+            continue
+
+        # Group buckets: (node_id, type) → {(hour, day_of_week): bucket}
+        sensor_buckets: dict = {}
+        for b in baselines:
+            key = (b['node_id'], b['type'])
+            sensor_buckets.setdefault(key, {})[(b['hour'], b['day_of_week'])] = b
+
+        # Current UTC hour-of-week (same convention as baseline DB keys)
+        now_dt = datetime.datetime.utcnow()
+        dow    = (now_dt.weekday() + 1) % 7 + 1  # 1=Sun … 7=Sat
+        hour   = now_dt.hour
+
+        updated_cooldowns = dict(cooldowns)
+        cooldowns_changed = False
+
+        for (node_id, sensor_type), bucket_map in sensor_buckets.items():
+            if sensor_type in ('BAT', 'RSSI'):
+                continue  # non-meaningful for baseline alerts
+
+            cooldown_key   = f'{node_id}|{sensor_type}'
+            last_triggered = float(cooldowns.get(cooldown_key, 0) or 0)
+            if now - last_triggered < _BASELINE_ACTUAL_COOLDOWN_MINUTES * 60:
+                continue  # still cooling down
+
+            bucket = bucket_map.get((hour, dow))
+            if bucket is None:
+                continue
+            mean = float(bucket.get('mean', 0))
+            std  = float(bucket.get('std',  0))
+            if std < 0.1:
+                continue  # near-flat signal
+
+            reading = db.SensorsLatest.find_one(
+                {'gateway_id': gateway_id, 'node_id': node_id, 'type': sensor_type},
+                {'value': 1, '_id': 0},
+            )
+            if reading is None:
+                continue
+            value = _parse_sensor_value(reading.get('value'))
+            if value is None:
+                continue
+
+            lo = mean - 2 * std
+            hi = mean + 2 * std
+            if lo <= value <= hi:
+                continue  # within expected range
+
+            dir_word  = 'high' if value > hi else 'low'
+            name      = _node_name(db, gateway_id, node_id)
+            type_label, unit = _TYPE_LABELS.get(sensor_type, (sensor_type, ''))
+            body = (
+                f'{name} {type_label} is unusually {dir_word} at {value:.1f}{unit} '
+                f'(expected {lo:.1f}–{hi:.1f}{unit}).'
+            )
+            print(f'[Alert] Baseline actual alert for {email}: '
+                  f'{node_id}/{sensor_type}={value:.1f} outside [{lo:.1f}, {hi:.1f}]')
+
+            if firebase_available:
+                token_docs = list(db.DeviceTokens.find({'email': email}, {'token': 1, '_id': 0}))
+                tokens = [d['token'] for d in token_docs if d.get('token')]
+                _send_fcm_push(tokens, 'Sensor Baseline Alert', body, db=db)
+
+            updated_cooldowns[cooldown_key] = now
+            cooldowns_changed = True
+
+        if cooldowns_changed:
+            db.NOAASettings.update_one(
+                {'email': email},
+                {'$set': {'baseline_actual_cooldowns': updated_cooldowns}},
+            )
+
+
 def run_once(db, firebase_available: bool) -> None:
     """Evaluate all enabled alert rules and fire notifications as needed."""
     now = time.time()
@@ -289,6 +404,9 @@ def run_once(db, firebase_available: bool) -> None:
             {'rule_id': rule_id},
             {'$set': {'last_triggered': now}},
         )
+
+    # Baseline actual alerts (opt-in, separate from AlertRules)
+    _check_baseline_actual_alerts(db, firebase_available)
 
 
 # ---------------------------------------------------------------------------
