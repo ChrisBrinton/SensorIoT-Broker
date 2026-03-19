@@ -1,0 +1,12 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+COPY Pipfile Pipfile
+RUN pip install pipenv && pipenv install --system --deploy
+
+COPY api/ api/
+
+EXPOSE 5050
+
+CMD ["gunicorn", "--bind", "0.0.0.0:5050", "--workers", "4", "--timeout", "120", "api.server:app"]

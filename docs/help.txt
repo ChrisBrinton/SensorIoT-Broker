@@ -1,0 +1,2 @@
+nginx logs: /var/log/nginx
+nginx config: /etc/nginx/nginx.conf
