@@ -1,0 +1,20 @@
+FROM nginx
+
+# install app dependencies
+RUN apt-get update && apt-get install -y python3 python3-pip
+RUN apt-get install gdebi -y
+
+RUN pip3 install python-etcd pymongo datetime timestamp
+RUN pip install  flask==3.0.*
+RUN ln -sf /proc/1/fd/1 /var/log/test.log
+
+
+# install app
+COPY ./Database.py /
+COPY ./startup.sh /
+
+# final configuration
+#ENV FLASK_APP=hello
+EXPOSE 1884
+#CMD ["pipenv" , "run", "python3" , "DataBroker.py" , "--db", "PROD"]
+CMD ["./startup.sh"]

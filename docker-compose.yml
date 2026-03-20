@@ -1,0 +1,42 @@
+name: sensoriot
+
+services:
+
+  rest_server:
+    image: sensoriot-rest_server
+    build: ./appbackend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    env_file:
+      - ./appbackend/.env
+    environment:
+      - MONGODB_HOST=host.docker.internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - anomaly_models:/models
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    networks:
+      - backend
+
+  broker:
+    image: sensoriot-broker
+    build: ./broker
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    environment:
+      - MONGODB_HOST=host.docker.internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - backend
+
+volumes:
+  anomaly_models:
+
+networks:
+  backend:
+    driver: bridge

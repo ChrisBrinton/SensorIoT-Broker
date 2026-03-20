@@ -1,0 +1,34 @@
+[[source]]
+url = "https://pypi.python.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+python-dotenv = "*"
+pipenv = "*"
+pymongo = "*"
+datetime = "*"
+python-dateutil = "*"
+flask = "*"
+flask-cors = "*"
+gunicorn = "*"
+certbot = "*"
+certbot-nginx = "*"
+sense-energy = "*"
+dotenv = "*"
+requests = "*"
+google-auth = "*"
+google-auth-oauthlib = "*"
+google-auth-httplib2 = "*"
+google-api-python-client = "*"
+oauthlib = "*"
+requests-oauthlib = "*"
+numpy = "*"
+pandas = "*"
+scikit-learn = "*"
+joblib = "*"
+
+[dev-packages]
+pytest = "*"
+mongomock = "*"
+cryptography = "*"

@@ -424,7 +424,7 @@ def main():
     parser.add_argument('--interval', type=int, default=0,
                         help='Run every N minutes; 0 = run once and exit')
     parser.add_argument('--firebase-key',
-                        default='../sensoriot-rest/firebase_service_account.json',
+                        default='../appbackend/firebase_service_account.json',
                         help='Path to Firebase service account JSON')
     args = parser.parse_args()
 

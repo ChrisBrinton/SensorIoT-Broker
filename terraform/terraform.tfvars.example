@@ -1,0 +1,18 @@
+# Copy this file to terraform.tfvars and fill in your real values.
+# terraform.tfvars is gitignored — never commit it.
+
+# IONOS Cloud API token
+# Generate at: DCD > Profile > Token Management
+ionos_token = "your-ionos-api-token-here"
+
+# SSH public key for root login (paste the contents of ~/.ssh/id_rsa.pub or ~/.ssh/id_ed25519.pub)
+ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAA... you@hostname"
+
+# Git repository URL to clone onto the server
+# Use HTTPS for public repos; for private repos use an SSH URL and add a deploy key.
+repo_url = "https://github.com/youruser/sensoriot_project.git"
+
+# Google OAuth credentials (from Google Cloud Console)
+google_web_client_id      = "1059898609396-xxxx.apps.googleusercontent.com"
+google_home_client_id     = "1059898609396-xxxx.apps.googleusercontent.com"
+google_home_client_secret = "GOCSPX-xxxx"
