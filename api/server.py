@@ -6,11 +6,15 @@ from pymongo import MongoClient
 import json
 import datetime as dt
 from dateutil.tz import *
+import os
 
-print('connecting to mongo...')
-client = MongoClient('localhost', 27017)  # make this explicit
-db = client['gdtechdb_prod']
-#db = client.test
+db_host = os.environ.get('DB_HOST', 'localhost')
+db_port = int(os.environ.get('DB_PORT', '27017'))
+db_name = os.environ.get('DB_NAME', 'gdtechdb_prod')
+
+print(f'connecting to mongo at {db_host}:{db_port}/{db_name}...')
+client = MongoClient(db_host, db_port)
+db = client[db_name]
 sensors = db['Sensors']
 sensorsLatest = db['SensorsLatest']
 nicknames = db['Nicknames']

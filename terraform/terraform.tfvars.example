@@ -1,0 +1,15 @@
+# Copy this file to terraform.tfvars and fill in your values.
+# Do NOT commit terraform.tfvars — it contains secrets.
+
+ionos_token         = "your-ionos-api-token-here"
+ssh_public_key      = "ssh-rsa AAAA... user@host"
+
+# Optional overrides (defaults shown)
+# datacenter_name     = "sensoriot-dc"
+# datacenter_location = "us/las"
+# server_name         = "sensoriot-broker"
+# server_cores        = 2
+# server_ram_mb       = 2048
+# volume_size_gb      = 20
+# volume_disk_type    = "SSD Standard"
+# domain_name         = "api.yourdomain.com"

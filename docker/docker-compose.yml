@@ -17,6 +17,7 @@ services:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
+      - ../mongodb/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
     restart: unless-stopped
 
   broker:
