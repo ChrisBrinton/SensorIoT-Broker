@@ -10,7 +10,7 @@ services:
       - "80:80"
       - "443:443"
     env_file:
-      - ./appbackend/.env
+      - ./.env
     environment:
       - MONGODB_HOST=host.docker.internal
     extra_hosts:

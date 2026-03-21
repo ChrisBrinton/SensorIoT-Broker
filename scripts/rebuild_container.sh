@@ -50,7 +50,7 @@ if [ "$REBUILD" = true ]; then
 fi
 
 # ── 2. Save + SCP ─────────────────────────────────────────────────────────────
-FILES_TO_SCP="docker-compose.yml"
+FILES_TO_SCP="docker-compose.yml appbackend/.env"
 
 if [ "$TARGET" = "all" ] || [ "$TARGET" = "rest" ]; then
   echo "==> Saving rest_server image..."
