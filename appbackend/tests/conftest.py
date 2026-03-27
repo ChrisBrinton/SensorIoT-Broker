@@ -51,7 +51,8 @@ def reset_app_state():
 
 # ── Database seed / teardown ──────────────────────────────────────────────────
 
-SEED_TS = 1_708_643_284.0  # fixed timestamp for deterministic assertions
+import time as _time
+SEED_TS = _time.time()  # use current time so readings fall within default query window
 
 
 @pytest.fixture
