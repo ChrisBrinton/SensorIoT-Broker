@@ -1,0 +1,58 @@
+name: Test
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test-appbackend:
+    name: REST API Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: appbackend/requirements.txt
+
+      - name: Install dependencies
+        working-directory: appbackend
+        run: |
+          pip install -r requirements.txt
+          pip install pytest mongomock cryptography
+
+      - name: Run tests
+        working-directory: appbackend
+        env:
+          MONGODB_HOST: localhost
+          GOOGLE_WEB_CLIENT_ID: test-client-id
+          GOOGLE_HOME_CLIENT_ID: test-client-id
+          GOOGLE_HOME_CLIENT_SECRET: test-secret
+        run: pytest -v
+
+  test-broker:
+    name: Broker Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        working-directory: broker
+        run: |
+          pip install paho-mqtt pymongo requests firebase-admin flask
+          pip install pytest mongomock
+
+      - name: Run tests
+        working-directory: broker
+        run: pytest test_databroker.py -v
