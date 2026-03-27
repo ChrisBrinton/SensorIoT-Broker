@@ -31,8 +31,6 @@ jobs:
         env:
           MONGODB_HOST: localhost
           GOOGLE_WEB_CLIENT_ID: test-client-id
-          GOOGLE_HOME_CLIENT_ID: test-client-id
-          GOOGLE_HOME_CLIENT_SECRET: test-secret
         run: pytest -v
 
   test-broker:

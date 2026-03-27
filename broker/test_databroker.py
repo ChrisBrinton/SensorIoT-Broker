@@ -76,7 +76,7 @@ class TestOnMessageValid:
     def test_sensors_insert_contains_value_field(self):
         DataBroker.on_message(None, None, _msg(self.TOPIC, b'98.6'))
         doc = DataBroker.db.Sensors.insert_one.call_args[0][0]
-        assert doc['value'] == str(b'98.6')
+        assert doc['value'] == '98.6'
 
     def test_sensors_insert_has_float_time(self):
         DataBroker.on_message(None, None, _msg(self.TOPIC))
@@ -122,7 +122,7 @@ class TestOnMessageValid:
     def test_sensors_latest_set_doc_has_value(self):
         DataBroker.on_message(None, None, _msg(self.TOPIC, b'55.0'))
         update_doc = DataBroker.db.SensorsLatest.update_one.call_args[0][1]
-        assert update_doc['$set']['value'] == str(b'55.0')
+        assert update_doc['$set']['value'] == '55.0'
 
 
 # ── on_message – invalid topics ───────────────────────────────────────────────
