@@ -1,0 +1,38 @@
+---
+- name: Check if Docker is installed
+  command: docker --version
+  register: docker_installed
+  ignore_errors: yes
+  changed_when: false
+
+- name: Install Docker via convenience script
+  when: docker_installed.rc != 0
+  block:
+    - name: Download Docker install script
+      get_url:
+        url: https://get.docker.com
+        dest: /tmp/get-docker.sh
+        mode: "0755"
+
+    - name: Run Docker install script
+      command: /tmp/get-docker.sh
+      become: yes
+
+    - name: Clean up install script
+      file:
+        path: /tmp/get-docker.sh
+        state: absent
+
+- name: Ensure Docker service is running and enabled
+  systemd:
+    name: docker
+    state: started
+    enabled: yes
+  become: yes
+
+- name: Add deploy user to docker group
+  user:
+    name: "{{ ansible_user }}"
+    groups: docker
+    append: yes
+  become: yes

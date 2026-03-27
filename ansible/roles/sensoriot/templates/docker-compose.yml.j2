@@ -1,18 +1,16 @@
-name: sensoriot
+# Managed by Ansible — do not edit manually on the server.
+name: {{ app_name }}
 
 services:
 
   rest_server:
     image: sensoriot-rest_server
-    build: ./appbackend
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
     env_file:
-      - ./.env
-    environment:
-      - MONGODB_HOST=host.docker.internal
+      - .env
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -23,18 +21,15 @@ services:
 
   broker:
     image: sensoriot-broker
-    build: ./broker
     restart: unless-stopped
     ports:
       - "1883:1883"
     env_file:
-      - ./.env
-    environment:
-      - MONGODB_HOST=host.docker.internal
+      - .env
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ./secrets/firebase_service_account.json:/firebase_service_account.json:ro
+      - {{ app_dir }}/secrets/firebase_service_account.json:/firebase_service_account.json:ro
     networks:
       - backend
 

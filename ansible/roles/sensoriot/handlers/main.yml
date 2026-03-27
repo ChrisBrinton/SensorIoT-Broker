@@ -1,0 +1,11 @@
+---
+- name: reload systemd
+  systemd:
+    daemon_reload: yes
+  become: yes
+
+- name: restart sensoriot
+  systemd:
+    name: sensoriot
+    state: restarted
+  become: yes

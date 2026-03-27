@@ -11,7 +11,7 @@ This document covers building, deploying, and operating the SensorIoT platform.
 3. [Docker Containers](#3-docker-containers)
 4. [Remote Deployment](#4-remote-deployment)
 5. [Nginx & SSL](#5-nginx--ssl)
-6. [Terraform Infrastructure](#6-terraform-infrastructure)
+6. [Ansible Provisioning & Deployment](#6-ansible-provisioning--deployment)
 7. [Firebase Setup](#7-firebase-setup)
 8. [Database Maintenance](#8-database-maintenance)
 9. [Monitoring & Logs](#9-monitoring--logs)
@@ -29,8 +29,8 @@ This document covers building, deploying, and operating the SensorIoT platform.
 | Pipenv | latest | Python dependency management |
 | Flutter SDK | 3.x (Dart ^3.6.1) | Mobile app builds |
 | Xcode | latest | iOS builds |
-| Terraform | 1.x | Infrastructure provisioning (optional) |
-| SSH | — | Remote server access |
+| Ansible | 2.15+ | Server provisioning and deployment |
+| SSH | — | Remote server access (Ansible operates over SSH) |
 
 ---
 
@@ -152,8 +152,9 @@ Layers:
 2. pip install: `paho-mqtt`, `pymongo`, `requests`, `firebase-admin`, etc.
 3. Copy application code (`DataBroker.py`, `NOAAPublisher.py`, `AlertPublisher.py`, `Database.py`, etc.)
 4. Copy `mosquitto.conf`
-5. Copy Firebase service account JSON → `/firebase_service_account.json`
-6. Entry point: `startup.sh`
+5. Entry point: `startup.sh`
+
+**Runtime volume:** Firebase service account JSON mounted at `/firebase_service_account.json` from `secrets/`
 
 **Startup sequence** (`startup.sh`):
 1. Start Mosquitto daemon (`-v -c /mosquitto.conf -d`)
@@ -239,7 +240,7 @@ Usage:
 
 ### 4.2 Systemd Service (on remote server)
 
-Terraform cloud-init installs a systemd unit:
+Ansible provision installs a systemd unit:
 
 ```ini
 [Unit]
@@ -294,22 +295,89 @@ After renewal, restart the REST server container to pick up new certs.
 
 ---
 
-## 6. Terraform Infrastructure
+## 6. Ansible Provisioning & Deployment
 
-**Directory:** `terraform/`
-**Provider:** IONOS Cloud (`ionoscloud ~> 6.4`)
+**Directory:** `ansible/`
 
-### 6.1 Resources Provisioned
+Ansible manages both one-time server provisioning and ongoing deployments. It operates entirely over SSH — no agent is installed on the VPS.
 
-| Resource | Specification |
+### 6.1 Setup
+
+```bash
+cd ansible/
+
+# 1. Create and encrypt your secrets vault
+cp group_vars/all/vault.yml.example group_vars/all/vault.yml
+# Fill in real values, then encrypt:
+ansible-vault encrypt group_vars/all/vault.yml
+
+# 2. Place Firebase service account in secrets/
+cp /path/to/firebase_service_account.json ../secrets/
+```
+
+### 6.2 Provision a Fresh VPS
+
+```bash
+ansible-playbook playbooks/provision.yml --ask-become-pass --ask-vault-pass
+```
+
+This installs and configures:
+- Base packages and timezone
+- Docker CE (adds deploy user to docker group)
+- MongoDB 7.0 (on host, not containerized)
+- UFW firewall (SSH, HTTP, HTTPS, MQTT)
+- Let's Encrypt SSL certificate with auto-renewal cron
+- Application directory (`/opt/sensoriot`), `.env`, `docker-compose.yml`
+- Systemd service for auto-start on reboot
+- Monthly database archive cron job
+
+### 6.3 Deploy New Code
+
+```bash
+# Deploy both services
+ansible-playbook playbooks/deploy.yml --ask-vault-pass
+
+# Deploy broker only
+ansible-playbook playbooks/deploy.yml --ask-vault-pass -e target=broker
+
+# Deploy REST server only
+ansible-playbook playbooks/deploy.yml --ask-vault-pass -e target=rest
+
+# Deploy without rebuilding (use existing local images)
+ansible-playbook playbooks/deploy.yml --ask-vault-pass -e skip_build=true
+```
+
+The deploy playbook:
+1. Builds Docker images locally (cross-compiled for `linux/amd64`)
+2. Saves and compresses images to tarballs
+3. Uploads tarballs to the VPS via SCP
+4. Loads images on the VPS
+5. Updates `docker-compose.yml` and `.env` from templates
+6. Restarts services via `docker compose up -d`
+7. Verifies containers are running
+
+### 6.4 Inventory
+
+**File:** `ansible/inventory.yml`
+
+```yaml
+all:
+  hosts:
+    sensoriot:
+      ansible_host: brintontech.com
+      ansible_user: azamike
+```
+
+### 6.5 Ansible Vault Secrets
+
+| Variable | Purpose |
 |---|---|
-| Datacenter | `sensoriot-datacenter` in `us/ewr` (Newark) |
-| Server | 2 vCPUs, 4 GB RAM, 50 GB SSD, Ubuntu 22.04 |
-| Public LAN | VLAN with dedicated IP block |
-| IP Block | 1 static public IP |
-| NIC | DHCP enabled, attached to public LAN |
+| `google_web_client_id` | Google OAuth web client ID |
+| `google_home_client_id` | Google Home OAuth client ID |
+| `google_home_client_secret` | Google Home OAuth client secret |
+| `aes_shared_key` | Base64-encoded 256-bit AES key |
 
-### 6.2 Firewall Rules (Ingress)
+### 6.6 Firewall Rules (UFW)
 
 | Port | Protocol | Purpose |
 |---|---|---|
@@ -318,43 +386,9 @@ After renewal, restart the REST server container to pick up new certs.
 | 443 | TCP | HTTPS |
 | 1883 | TCP | MQTT |
 
-### 6.3 Cloud-Init
+### 6.7 Legacy: Terraform
 
-On first boot, the server:
-1. Installs Docker CE
-2. Clones the repository to `/opt/sensoriot`
-3. Writes `.env` file with Google OAuth credentials
-4. Runs `docker compose up -d --build`
-5. Enables the systemd unit for auto-start on reboot
-
-### 6.4 Usage
-
-```bash
-cd terraform
-cp terraform.tfvars.example terraform.tfvars    # Fill in real values
-terraform init
-terraform plan
-terraform apply
-```
-
-### 6.5 Variables
-
-| Variable | Sensitive | Purpose |
-|---|---|---|
-| `ionos_token` | Yes | IONOS Cloud API token |
-| `ssh_public_key` | No | SSH key for root access |
-| `repo_url` | No | Git repository URL |
-| `google_web_client_id` | Yes | Google OAuth web client ID |
-| `google_home_client_id` | Yes | Google Home OAuth client ID |
-| `google_home_client_secret` | Yes | Google Home OAuth client secret |
-
-### 6.6 Outputs
-
-| Output | Value |
-|---|---|
-| `server_public_ip` | Static public IP of the server |
-| `ssh_connection` | SSH command (`ssh root@<ip>`) |
-| `datacenter_id` | IONOS datacenter reference ID |
+The `terraform/` directory contains IONOS Cloud provisioning configs from an earlier setup. These are no longer used — the VPS is a standard IONOS VPS that doesn't support the Terraform IONOS provider. Ansible replaces this entirely.
 
 ---
 
@@ -388,7 +422,7 @@ The broker needs a Firebase Admin SDK service account key for sending FCM messag
 | Environment | File path |
 |---|---|
 | Local development | `sensoriot-broker/firebase_service_account.json` |
-| Docker container | `/firebase_service_account.json` (copied during build) |
+| Docker container | `/firebase_service_account.json` (mounted at runtime from `secrets/`) |
 | AlertPublisher flag | `--firebase-key <path>` (default: `../sensoriot-rest/firebase_service_account.json`) |
 
 Both `AlertPublisher.py` and `NOAAPublisher.py` try/except import `firebase_admin` — they degrade gracefully to webhook-only mode if the SDK or key file is unavailable.
@@ -516,7 +550,13 @@ cd sensoriot-broker && pipenv run python3 DataBroker.py --db TEST   # Dev broker
 # === Docker (local) ===
 docker-compose up --build                                # Full stack
 
-# === Deploy to production ===
+# === Deploy to production (Ansible) ===
+cd ansible
+ansible-playbook playbooks/deploy.yml --ask-vault-pass          # Build + deploy all
+ansible-playbook playbooks/deploy.yml --ask-vault-pass -e target=rest    # REST only
+ansible-playbook playbooks/deploy.yml --ask-vault-pass -e target=broker  # Broker only
+
+# === Deploy to production (legacy script) ===
 ./rebuild_container.sh                                   # Build + deploy all
 ./rebuild_container.sh -t rest                           # REST server only
 ./rebuild_container.sh -t broker                         # Broker only

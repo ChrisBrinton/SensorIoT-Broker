@@ -1,0 +1,28 @@
+# ── Application settings ──────────────────────────────────────────────────────
+app_name: sensoriot
+app_dir: /opt/sensoriot
+domain: brintontech.com
+certbot_email: keyvanazami@gmail.com
+
+# ── MongoDB ──────────────────────────────────────────────────────────────────
+mongodb_version: "7.0"
+
+# ── Docker Compose services ──────────────────────────────────────────────────
+# Set to "host.docker.internal" when MongoDB runs on host (default)
+mongodb_host: host.docker.internal
+
+# Gunicorn workers — keep low on a small VPS
+gunicorn_workers: 2
+
+# ── Firewall ─────────────────────────────────────────────────────────────────
+firewall_allowed_ports:
+  - { port: 22, proto: tcp }
+  - { port: 80, proto: tcp }
+  - { port: 443, proto: tcp }
+  - { port: 1883, proto: tcp }
+
+# ── Secrets (override in vault.yml or pass via --extra-vars) ─────────────────
+# google_web_client_id: ""
+# google_home_client_id: ""
+# google_home_client_secret: ""
+# aes_shared_key: ""

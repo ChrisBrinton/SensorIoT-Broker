@@ -1,0 +1,42 @@
+---
+- name: Check if MongoDB is installed
+  command: mongod --version
+  register: mongod_installed
+  ignore_errors: yes
+  changed_when: false
+
+- name: Install MongoDB
+  when: mongod_installed.rc != 0
+  block:
+    - name: Import MongoDB GPG key
+      apt_key:
+        url: "https://pgp.mongodb.com/server-{{ mongodb_version }}.asc"
+        state: present
+      become: yes
+
+    - name: Add MongoDB repository
+      apt_repository:
+        repo: "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu {{ ansible_distribution_release }}/mongodb-org/{{ mongodb_version }} multiverse"
+        state: present
+        filename: mongodb-org
+      become: yes
+
+    - name: Install MongoDB packages
+      apt:
+        name: mongodb-org
+        state: present
+        update_cache: yes
+      become: yes
+
+- name: Ensure MongoDB is running and enabled
+  systemd:
+    name: mongod
+    state: started
+    enabled: yes
+  become: yes
+
+- name: Wait for MongoDB to be ready
+  wait_for:
+    port: 27017
+    delay: 2
+    timeout: 30

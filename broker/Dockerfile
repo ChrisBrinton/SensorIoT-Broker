@@ -25,7 +25,8 @@ COPY ./AlertPublisher.py /
 #RUN mkdir -p /etc/mosquito
 COPY ./mosquitto.conf /
 COPY ./startup.sh /
-COPY ./sensoriot-488101-firebase-adminsdk-fbsvc-76e763b0e2.json /firebase_service_account.json
+# Firebase service account is mounted at runtime via docker-compose volume
+# Place the JSON file in secrets/firebase_service_account.json (gitignored)
 
 # final configuration
 #ENV FLASK_APP=hello

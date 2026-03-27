@@ -1,0 +1,121 @@
+---
+# deploy.yml — Build images locally and deploy to the VPS
+#
+# Usage:
+#   cd ansible/
+#   ansible-playbook playbooks/deploy.yml                     # deploy both
+#   ansible-playbook playbooks/deploy.yml -e target=broker    # broker only
+#   ansible-playbook playbooks/deploy.yml -e target=rest      # rest only
+#   ansible-playbook playbooks/deploy.yml -e skip_build=true  # deploy existing images
+#   ansible-playbook playbooks/deploy.yml --ask-vault-pass    # if secrets changed
+#
+# This replaces scripts/rebuild_container.sh with an idempotent Ansible workflow.
+
+- name: Build Docker images locally
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  vars:
+    target: all
+    skip_build: false
+    repo_root: "{{ playbook_dir }}/../.."
+
+  tasks:
+    - name: Build rest_server image
+      command: docker build --platform linux/amd64 -t sensoriot-rest_server .
+      args:
+        chdir: "{{ repo_root }}/appbackend"
+      when: not skip_build and (target == 'all' or target == 'rest')
+
+    - name: Build broker image
+      command: docker build --platform linux/amd64 -t sensoriot-broker .
+      args:
+        chdir: "{{ repo_root }}/broker"
+      when: not skip_build and (target == 'all' or target == 'broker')
+
+    - name: Save rest_server image
+      command: docker save sensoriot-rest_server -o /tmp/sensoriot-rest_server.tar
+      when: target == 'all' or target == 'rest'
+
+    - name: Compress rest_server image
+      command: gzip -f /tmp/sensoriot-rest_server.tar
+      when: target == 'all' or target == 'rest'
+
+    - name: Save broker image
+      command: docker save sensoriot-broker -o /tmp/sensoriot-broker.tar
+      when: target == 'all' or target == 'broker'
+
+    - name: Compress broker image
+      command: gzip -f /tmp/sensoriot-broker.tar
+      when: target == 'all' or target == 'broker'
+
+
+- name: Deploy to VPS
+  hosts: sensoriot
+  gather_facts: no
+  vars:
+    target: all
+
+  tasks:
+    # ── Upload images ──────────────────────────────────────────────────────
+    - name: Upload rest_server image
+      copy:
+        src: /tmp/sensoriot-rest_server.tar.gz
+        dest: "/tmp/sensoriot-rest_server.tar.gz"
+      when: target == 'all' or target == 'rest'
+
+    - name: Upload broker image
+      copy:
+        src: /tmp/sensoriot-broker.tar.gz
+        dest: "/tmp/sensoriot-broker.tar.gz"
+      when: target == 'all' or target == 'broker'
+
+    # ── Load images ────────────────────────────────────────────────────────
+    - name: Load rest_server image
+      shell: gunzip -c /tmp/sensoriot-rest_server.tar.gz | docker load
+      when: target == 'all' or target == 'rest'
+
+    - name: Load broker image
+      shell: gunzip -c /tmp/sensoriot-broker.tar.gz | docker load
+      when: target == 'all' or target == 'broker'
+
+    # ── Update configs if needed ───────────────────────────────────────────
+    - name: Deploy docker-compose.yml
+      template:
+        src: "../roles/sensoriot/templates/docker-compose.yml.j2"
+        dest: "{{ app_dir }}/docker-compose.yml"
+        owner: "{{ ansible_user }}"
+        mode: "0644"
+
+    - name: Deploy .env file
+      template:
+        src: "../roles/sensoriot/templates/env.j2"
+        dest: "{{ app_dir }}/.env"
+        owner: "{{ ansible_user }}"
+        mode: "0600"
+
+    # ── Restart services ───────────────────────────────────────────────────
+    - name: Restart services
+      shell: docker compose up -d --no-build
+      args:
+        chdir: "{{ app_dir }}"
+
+    # ── Cleanup remote temp files ──────────────────────────────────────────
+    - name: Clean up uploaded images
+      file:
+        path: "/tmp/{{ item }}"
+        state: absent
+      loop:
+        - sensoriot-rest_server.tar.gz
+        - sensoriot-broker.tar.gz
+
+  post_tasks:
+    - name: Verify containers are running
+      shell: docker compose ps --format json
+      args:
+        chdir: "{{ app_dir }}"
+      register: compose_status
+
+    - name: Show container status
+      debug:
+        msg: "{{ compose_status.stdout }}"

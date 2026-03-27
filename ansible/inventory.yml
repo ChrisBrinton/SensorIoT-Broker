@@ -1,0 +1,7 @@
+all:
+  hosts:
+    sensoriot:
+      ansible_host: 74.208.249.154
+      ansible_user: cbrinton
+      ansible_become: yes
+      # ansible_ssh_private_key_file: ~/.ssh/id_rsa

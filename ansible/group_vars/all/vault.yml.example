@@ -1,0 +1,9 @@
+# Copy this file to vault.yml and fill in real values.
+# Encrypt with: ansible-vault encrypt group_vars/all/vault.yml
+#
+# These are sensitive values that should NOT be committed to git.
+
+google_web_client_id: "your-google-web-client-id"
+google_home_client_id: "your-google-home-client-id"
+google_home_client_secret: "your-google-home-client-secret"
+aes_shared_key: "your-base64-encoded-256bit-key"

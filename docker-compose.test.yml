@@ -1,14 +1,16 @@
-name: sensoriot
+# Temporary test compose — runs on alternate ports alongside the old deployment.
+# Once verified, stop the old containers and switch to docker-compose.yml (real ports).
+name: sensoriot-test
 
 services:
 
   rest_server:
-    image: sensoriot-rest_server
+    image: sensoriot-rest_server:test
     build: ./appbackend
-    restart: unless-stopped
+    restart: "no"
     ports:
-      - "80:80"
-      - "443:443"
+      - "8080:80"
+      - "8443:443"
     env_file:
       - ./.env
     environment:
@@ -16,17 +18,17 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - anomaly_models:/models
+      - anomaly_models_test:/models
       - /etc/letsencrypt:/etc/letsencrypt:ro
     networks:
       - backend
 
   broker:
-    image: sensoriot-broker
+    image: sensoriot-broker:test
     build: ./broker
-    restart: unless-stopped
+    restart: "no"
     ports:
-      - "1883:1883"
+      - "1884:1883"
     env_file:
       - ./.env
     environment:
@@ -39,7 +41,7 @@ services:
       - backend
 
 volumes:
-  anomaly_models:
+  anomaly_models_test:
 
 networks:
   backend:

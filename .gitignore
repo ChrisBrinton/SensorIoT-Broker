@@ -135,9 +135,10 @@ ENV/
 *.tar.gz
 
 # SSL/TLS
-ssl-dhparams.pem
 certs/
 priv*.pem
+# ssl-dhparams.pem is NOT secret (standard DH params) — needed in Docker build context
+!appbackend/ssl-dhparams.pem
 
 # Model outputs (generated, not committed)
 appbackend/models/
@@ -160,6 +161,11 @@ terraform/*.tfstate
 terraform/*.tfstate.backup
 terraform/*.tfvars
 !terraform/terraform.tfvars.example
+
+# Ansible secrets
+ansible/group_vars/all/vault.yml
+secrets/
+!secrets/.gitkeep
 
 # Screenshots
 *.png

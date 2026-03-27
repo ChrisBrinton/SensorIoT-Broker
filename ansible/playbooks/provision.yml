@@ -1,0 +1,30 @@
+---
+# provision.yml — One-time server setup for a fresh VPS
+#
+# Usage:
+#   cd ansible/
+#   ansible-playbook playbooks/provision.yml --ask-become-pass --ask-vault-pass
+#
+# Prerequisites:
+#   - SSH access to the target host (inventory.yml)
+#   - Secrets in group_vars/all/vault.yml (see vault.yml.example)
+#
+# What this does:
+#   1. Installs base packages, sets timezone
+#   2. Installs and starts Docker CE
+#   3. Installs and starts MongoDB (on host, not containerized)
+#   4. Configures UFW firewall (SSH, HTTP, HTTPS, MQTT)
+#   5. Obtains Let's Encrypt SSL certificate
+#   6. Creates app directory, deploys configs, enables systemd service
+
+- name: Provision SensorIoT VPS
+  hosts: sensoriot
+  gather_facts: yes
+
+  roles:
+    - common
+    - docker
+    - mongodb
+    - firewall
+    - certbot
+    - sensoriot

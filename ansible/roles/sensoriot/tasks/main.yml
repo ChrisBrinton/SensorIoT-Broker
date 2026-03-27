@@ -1,0 +1,57 @@
+---
+- name: Create application directory
+  file:
+    path: "{{ app_dir }}"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0755"
+  become: yes
+
+- name: Create secrets directory
+  file:
+    path: "{{ app_dir }}/secrets"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0700"
+  become: yes
+
+- name: Deploy .env file
+  template:
+    src: env.j2
+    dest: "{{ app_dir }}/.env"
+    owner: "{{ ansible_user }}"
+    mode: "0600"
+
+- name: Deploy docker-compose.yml
+  template:
+    src: docker-compose.yml.j2
+    dest: "{{ app_dir }}/docker-compose.yml"
+    owner: "{{ ansible_user }}"
+    mode: "0644"
+
+- name: Deploy systemd service
+  template:
+    src: sensoriot.service.j2
+    dest: /etc/systemd/system/sensoriot.service
+    mode: "0644"
+  become: yes
+  notify: reload systemd
+
+- name: Enable sensoriot service
+  systemd:
+    name: sensoriot
+    enabled: yes
+  become: yes
+
+- name: Set up monthly database archive cron
+  cron:
+    name: "sensoriot db archive"
+    minute: "0"
+    hour: "2"
+    day: "1"
+    month: "*"
+    weekday: "*"
+    job: "docker exec sensoriot-rest_server-1 python3 archivedb.py -d PROD -m 6 --remove >> /var/log/sensoriot-archive.log 2>&1"
+  become: yes

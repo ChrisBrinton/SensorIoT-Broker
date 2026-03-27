@@ -1,0 +1,33 @@
+---
+- name: Install certbot and nginx plugin
+  apt:
+    name:
+      - certbot
+    state: present
+  become: yes
+
+- name: Check if certificate already exists
+  stat:
+    path: "/etc/letsencrypt/live/{{ domain }}/fullchain.pem"
+  register: cert_file
+  become: yes
+
+- name: Obtain SSL certificate (standalone mode — ensure port 80 is free)
+  command: >
+    certbot certonly --standalone
+    --non-interactive --agree-tos
+    --email {{ certbot_email }}
+    -d {{ domain }} -d www.{{ domain }}
+  when: not cert_file.stat.exists
+  become: yes
+
+- name: Set up certbot auto-renewal cron
+  cron:
+    name: "certbot renew"
+    minute: "30"
+    hour: "2"
+    day: "*"
+    month: "*"
+    weekday: "*"
+    job: "certbot renew --quiet --deploy-hook 'docker restart sensoriot-rest_server-1' 2>&1 | logger -t certbot"
+  become: yes

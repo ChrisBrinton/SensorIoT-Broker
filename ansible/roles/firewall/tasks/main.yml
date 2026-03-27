@@ -1,0 +1,31 @@
+---
+- name: Install ufw
+  apt:
+    name: ufw
+    state: present
+  become: yes
+
+- name: Set default deny incoming
+  ufw:
+    direction: incoming
+    policy: deny
+  become: yes
+
+- name: Set default allow outgoing
+  ufw:
+    direction: outgoing
+    policy: allow
+  become: yes
+
+- name: Allow configured ports
+  ufw:
+    rule: allow
+    port: "{{ item.port | string }}"
+    proto: "{{ item.proto }}"
+  loop: "{{ firewall_allowed_ports }}"
+  become: yes
+
+- name: Enable ufw
+  ufw:
+    state: enabled
+  become: yes
