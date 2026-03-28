@@ -224,15 +224,18 @@ Key behaviours:
 - **FCM push**: `main.dart` initialises Firebase, requests notification permission, registers device token on login via `POST /device_token`; platform detected with `dart:io Platform.isIOS`
 - **iOS widget**: `ios/SensorWidgetExtension/` — shares data via App Group `group.com.brintontech.sensoriot`
 
-### Regression forecasting (`sensoriot-rest/regression_training.py`)
+### Regression forecasting (`appbackend/regression_training.py`)
 
-Per-sensor (node×type) supervised regression pipeline. Key details:
+Per-sensor (node×type) supervised regression pipeline (v2). Key details:
 
-- **Data**: All historical data used (no 90-day cap)
-- **Feature engineering**: Cyclic time features, lag features, NOAA temperature (when available via `anomaly_training._backfill_noaa_history()`)
-- **Models**: 10 hyperparameter variants across Ridge Regression, Random Forest, and Gradient Boosted Trees
-- **Validation**: TimeSeriesSplit cross-validation; winner chosen by mean R²
-- **Storage**: `models/{gw}/regression/{node}_{type}.joblib` + `_meta.json` (includes `has_noaa`, `r2`, `rmse`, `num_rows`, `trained_at`)
+- **Data**: All historical data used (no lookback cap), plus sibling sensor data and NOAA outdoor temperature
+- **Feature engineering (v2)**: 15 features — cyclic time (hour/dow), seasonal (month/week-of-year), rolling stats (mean/std over 6/12/24h windows), NOAA outdoor temp, sibling sensor value
+- **Models**: 8 hyperparameter variants across Ridge, GradientBoosting, HistGradientBoosting, and RandomForest
+- **Validation**: TimeSeriesSplit cross-validation (5 folds); winner chosen by mean R²; MAE also tracked
+- **Multi-step forecasting**: Direct prediction (no lag features) — rolling stats are computed from `recent_values` stored at training time, extended with each prediction step
+- **Storage**: `models/{gw}/regression/{node}_{type}.joblib` + `_meta.json` (includes `feature_version`, `has_noaa`, `r2`, `rmse`, `mae`, `recent_values`, `sibling_mean`, `num_rows`, `trained_at`)
+- **Backward compatibility**: v1 models (without `feature_version`) use legacy prediction path; v2 uses enriched features
+- **Experiment script**: `regression_experiment.py` evaluates feature/model combinations on real data via SSH tunnel
 
 ### Anomaly detection (`sensoriot-rest/anomaly_training.py`)
 

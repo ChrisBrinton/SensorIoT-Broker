@@ -77,7 +77,7 @@ Each component is independently deployable. Infrastructure files (`docker-compos
                     │  Flask / Gunicorn / Nginx (SSL)              │
                     │  + anomaly_training.py (Isolation Forest,    │
                     │    OC-SVM, NS-RF)                            │
-                    │  + regression_training.py (Ridge, RF, GBT)   │
+                    │  + regression_training.py (Ridge, GBT, HistGBR, RF) │
                     └──────────────────┬───────────────────────────┘
                                        │  HTTPS (brintontech.com)
                          ┌─────────────┼─────────────┐
@@ -395,20 +395,36 @@ Both documents carry: `model`, `gateway_id`, `node_id`, `type`, `value`, `time` 
 
 ### 7.2 Regression Forecasting (`regression_training.py`)
 
-**Scope:** One supervised model per sensor (node × type), predicting future values.
+**Scope:** One supervised model per sensor (node × type), predicting future indoor climate values up to 48 hours ahead.
 
-**Pipeline:**
+**Pipeline (v2):**
 
-1. **Data retrieval** — All historical data for the sensor (no 90-day cap)
-2. **Feature engineering** — Cyclic time features, lag features, NOAA temperature (when available)
-3. **Hyperparameter search** — 10 variants across three model families:
-   - Ridge Regression
+1. **Data retrieval** — All historical data for the sensor (no lookback cap), plus sibling sensor data (e.g. humidity when predicting temperature) and NOAA outdoor temperature
+2. **Feature engineering** — 15 features per sensor:
+   - **Cyclic time:** hour-of-day sin/cos, day-of-week sin/cos (4 features)
+   - **Seasonal:** month sin/cos, week-of-year sin/cos (4 features)
+   - **Rolling statistics:** mean and std over 6, 12, 24 hour windows (6 features) — the largest contributor to model accuracy
+   - **NOAA outdoor temperature** (1 feature, when >= 50% coverage)
+   - **Sibling sensor** value (e.g. humidity for temperature prediction)
+3. **Hyperparameter search** — 8 variants across four model families:
+   - Ridge Regression (alpha 0.1, 1.0, 10.0)
+   - Gradient Boosted Trees (2 variants)
+   - HistGradientBoostingRegressor (2 variants) — handles NaN natively, fast
    - Random Forest Regressor
-   - Gradient Boosted Trees
-4. **Validation** — TimeSeriesSplit cross-validation; winner chosen by mean R²
-5. **Storage** — `models/{gw}/regression/{node}_{type}.joblib` + `_meta.json` (includes `has_noaa` flag, R², RMSE, row count)
+4. **Validation** — TimeSeriesSplit cross-validation (5 folds); winner chosen by mean R²; MAE also tracked
+5. **Storage** — `models/{gw}/regression/{node}_{type}.joblib` + `_meta.json`
+
+**Metadata schema (v2):** `feature_version`, `r2`, `rmse`, `mae`, `has_noaa`, `noaa_mean`, `feature_columns`, `recent_values` (last 24 hourly readings for rolling stats at prediction time), `sibling_mean`, `num_rows`, `trained_at`
+
+**Multi-step forecasting strategy:** Direct prediction (no lag features). Experiments showed that lag features achieve excellent CV R² (0.94+) but degrade severely over 48-hour recursive forecasts due to error accumulation. Rolling statistics + seasonal features provide the best balance of accuracy across all forecast horizons. Recent sensor values are stored at training time and extended with each prediction step to maintain rolling stats continuity.
+
+**Physical clipping:** Predictions are clipped to valid ranges (20-130 F for temperature, 0-100% for humidity).
+
+**Backward compatibility:** Models with `feature_version=1` (or absent) use the legacy prediction path (time + NOAA features only). V2 models use the enriched feature set.
 
 **NOAA integration:** Reuses `anomaly_training._backfill_noaa_history()` to get historical NOAA data as a feature. The `has_noaa` flag in metadata indicates whether the model was trained with NOAA features.
+
+**Experiment script:** `regression_experiment.py` evaluates feature/model combinations against real data. Run with MongoDB accessible on localhost:27017 (via SSH tunnel). Tests 8 feature sets x 9 models with both CV and 48-hour multi-step forecast evaluation.
 
 ### 7.3 Baseline Analysis
 
