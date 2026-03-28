@@ -384,14 +384,14 @@ Both documents carry: `model`, `gateway_id`, `node_id`, `type`, `value`, `time` 
    - Cyclic time features: hour sin/cos, day-of-week sin/cos
    - Per-sensor rolling trend: delta, rolling mean, rolling std (6-bucket window)
 4. **NOAA integration** — When `NOAASettings.enabled=True`, `noaa_forecast_F` is forward-filled and included as a feature
-5. **Training** — Three detectors trained in parallel:
-   - Isolation Forest
-   - One-Class SVM
-   - Negative-Sampling Random Forest (MADI library)
-6. **Selection** — Winner chosen by AUC score
+5. **Training** — Six detectors trained:
+   - Isolation Forest, One-Class SVM, Negative-Sampling Random Forest (MADI library)
+   - Local Outlier Factor, Elliptic Envelope, NS-MLP (scikit-learn)
+   - Ensemble: auto-built from top 3 individual detectors (averaged class_prob)
+6. **Selection** — Winner (individual or ensemble) chosen by F1 score on anomaly class
 7. **Storage** — `models/{gateway_id}/model.joblib` + `metadata.json`
 
-**Prediction:** `predict_anomalies()` returns Unix timestamps where `class_prob < threshold` (1.0 = normal). Old models without new feature columns continue to work — prediction filters to available columns.
+**Prediction:** `predict_anomalies()` returns Unix timestamps where `class_prob < threshold` (1.0 = normal). Ensemble models average across their member detectors. Old models without new feature columns continue to work — prediction filters to available columns.
 
 ### 7.2 Regression Forecasting (`regression_training.py`)
 

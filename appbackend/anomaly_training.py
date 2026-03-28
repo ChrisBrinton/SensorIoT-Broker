@@ -45,7 +45,11 @@ from madi.detectors.one_class_svm import OneClassSVMAd
 from madi.detectors.neg_sample_random_forest import NegativeSamplingRandomForestAd
 import madi.utils.sample_utils as sample_utils
 from madi.utils.evaluation_utils import compute_auc
+from sklearn.covariance import EllipticEnvelope
 from sklearn.metrics import f1_score as sk_f1_score
+from sklearn.neighbors import LocalOutlierFactor
+from sklearn.neural_network import MLPClassifier
+from sklearn.preprocessing import StandardScaler
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -79,6 +83,102 @@ _BUCKET_SECONDS    = 60   # fallback / minimum bucket size
 _BUCKET_CANDIDATES = (60, 120, 300, 600, 900, 1800, 3600)
 _NOAA_NODE_ID      = 'noaa_forecast'
 _TREND_WINDOW      = 6   # rolling window (buckets) for delta/mean/std trend features
+
+
+# ---------------------------------------------------------------------------
+# Additional detector wrappers (same train_model/predict interface as madi)
+# ---------------------------------------------------------------------------
+
+class _LOFDetector:
+    """Local Outlier Factor in novelty detection mode."""
+
+    def __init__(self, n_neighbors=20, contamination=0.05):
+        self._model = LocalOutlierFactor(
+            n_neighbors=n_neighbors, contamination=contamination, novelty=True)
+        self._scaler = StandardScaler()
+
+    def train_model(self, x_train: pd.DataFrame) -> None:
+        self._scaler.fit(x_train)
+        self._model.fit(self._scaler.transform(x_train))
+
+    def predict(self, sample_df: pd.DataFrame) -> pd.DataFrame:
+        preds = self._model.predict(self._scaler.transform(sample_df))
+        sample_df['class_prob'] = np.where(preds == 1, 1.0, 0.0)
+        return sample_df
+
+
+class _EllipticEnvelopeDetector:
+    """Robust covariance-based outlier detection."""
+
+    def __init__(self, contamination=0.05):
+        self._model = EllipticEnvelope(contamination=contamination, support_fraction=0.9)
+        self._scaler = StandardScaler()
+
+    def train_model(self, x_train: pd.DataFrame) -> None:
+        self._scaler.fit(x_train)
+        self._model.fit(self._scaler.transform(x_train))
+
+    def predict(self, sample_df: pd.DataFrame) -> pd.DataFrame:
+        preds = self._model.predict(self._scaler.transform(sample_df))
+        sample_df['class_prob'] = np.where(preds == 1, 1.0, 0.0)
+        return sample_df
+
+
+class _NSMLPDetector:
+    """Negative-Sampling MLP — scikit-learn replacement for the TF NS-NeuralNet."""
+
+    def __init__(self, hidden_layer_sizes=(128, 64, 32), sample_ratio=2.0,
+                 sample_delta=0.05, random_state=42):
+        self._model = MLPClassifier(
+            hidden_layer_sizes=hidden_layer_sizes, activation='relu',
+            max_iter=200, early_stopping=True, validation_fraction=0.15,
+            random_state=random_state)
+        self._scaler = StandardScaler()
+        self._sample_ratio = sample_ratio
+        self._sample_delta = sample_delta
+
+    def train_model(self, x_train: pd.DataFrame) -> None:
+        self._normalization_info = sample_utils.get_normalization_info(x_train)
+        column_order = sample_utils.get_column_order(self._normalization_info)
+        normalized = sample_utils.normalize(x_train[column_order], self._normalization_info)
+        training_sample = sample_utils.apply_negative_sample(
+            positive_sample=normalized,
+            sample_ratio=self._sample_ratio,
+            sample_delta=self._sample_delta)
+        self._model.fit(training_sample[column_order], training_sample['class_label'])
+        self._column_order = column_order
+
+    def predict(self, sample_df: pd.DataFrame) -> pd.DataFrame:
+        normalized = sample_utils.normalize(sample_df, self._normalization_info)
+        x = normalized[self._column_order].astype(np.float32)
+        probs = self._model.predict_proba(x)
+        sample_df['class_prob'] = probs[:, 1]
+        return sample_df
+
+
+class _EnsembleDetector:
+    """Average class_prob across multiple trained detectors.
+
+    Satisfies the same train_model/predict interface as madi detectors so it
+    can be saved with joblib and used by predict_anomalies() transparently.
+    """
+
+    def __init__(self, detectors: list, names: list):
+        self._detectors = detectors
+        self._names = names
+
+    def train_model(self, x_train: pd.DataFrame) -> None:
+        for name, det in zip(self._names, self._detectors):
+            logger.debug('Ensemble: training %s...', name)
+            det.train_model(x_train.copy())
+
+    def predict(self, sample_df: pd.DataFrame) -> pd.DataFrame:
+        all_probs = []
+        for det in self._detectors:
+            result = det.predict(sample_df.copy())
+            all_probs.append(result['class_prob'].values)
+        sample_df['class_prob'] = np.mean(all_probs, axis=0)
+        return sample_df
 
 
 def _add_engineered_features(df: pd.DataFrame) -> pd.DataFrame:
@@ -251,17 +351,18 @@ def train_and_select_best(
     node_df: pd.DataFrame,
     random_state: int = 42,
 ) -> Tuple[object, str, float, float, List[str]]:
-    """Train IF / OC-SVM / NS-RF via madi wrappers, pick best by F1 score.
+    """Train multiple detectors, build an ensemble, and pick the best by F1.
+
+    Detectors trained:
+      - IsolationForest, OneClassSVM, NS-RandomForest (original madi wrappers)
+      - LOF, EllipticEnvelope, NS-MLP (new scikit-learn detectors)
+      - Ensemble (average of top-3 by F1)
 
     F1 is computed on the anomaly class (pos_label=0): it measures how well the
     model identifies the synthetic anomalies in the held-out test set.  AUC is
     also computed and retained for reference.
 
     Returns (best_detector, model_type_name, auc, f1, feature_columns).
-    feature_columns is derived from the input DataFrame columns — for gateway-level
-    training these are prefixed (e.g. '1_F', '1_H', '2_F'). Normalization is embedded
-    in each detector's _normalization_info attribute and persisted automatically by
-    joblib when save_model() is called.
     """
     np.random.seed(random_state)
 
@@ -280,7 +381,6 @@ def train_and_select_best(
     # Drop zero-variance columns before training.  Constant features carry no
     # information and cause the NS-RandomForest negative sampler to fail:
     # normalization divides by std=0 → NaN bounds → "Range exceeds valid bounds".
-    # This most commonly affects _roll_std and _delta columns for flat sensors.
     variances = node_df.var()
     zero_var_cols = variances[variances == 0].index.tolist()
     if zero_var_cols:
@@ -310,6 +410,12 @@ def train_and_select_best(
         'NS-RandomForest': NegativeSamplingRandomForestAd(
             n_estimators=100, random_state=random_state,
             sample_ratio=_SAMPLE_RATIO, sample_delta=_SAMPLE_DELTA),
+        'LOF':             _LOFDetector(n_neighbors=20, contamination=0.05),
+        'EllipticEnvelope': _EllipticEnvelopeDetector(contamination=0.05),
+        'NS-MLP':          _NSMLPDetector(hidden_layer_sizes=(128, 64, 32),
+                                          sample_ratio=_SAMPLE_RATIO,
+                                          sample_delta=_SAMPLE_DELTA,
+                                          random_state=random_state),
     }
 
     results = {}
@@ -320,7 +426,6 @@ def train_and_select_best(
             pred_df = det.predict(X_test_df.copy())
             probs   = pred_df['class_prob'].values
             auc = float(compute_auc(y_test, probs))
-            # F1 on the anomaly class (label=0): threshold class_prob at 0.5
             y_pred = (probs >= _ANOMALY_THRESHOLD).astype(int)
             f1  = float(sk_f1_score(y_test, y_pred, pos_label=0, zero_division=0))
             results[name] = (det, auc, f1)
@@ -330,6 +435,27 @@ def train_and_select_best(
 
     if not results:
         raise RuntimeError('All detectors failed to train')
+
+    # Build an ensemble from the top 3 individual detectors (by F1)
+    ranked = sorted(results.items(), key=lambda kv: kv[1][2], reverse=True)
+    top_n = min(3, len(ranked))
+    top_names = [kv[0] for kv in ranked[:top_n]]
+    top_dets  = [kv[1][0] for kv in ranked[:top_n]]
+    ensemble_label = 'Ensemble(' + '+'.join(top_names) + ')'
+
+    if top_n >= 2:
+        ensemble = _EnsembleDetector(top_dets, top_names)
+        # Ensemble is already trained — just evaluate
+        try:
+            pred_df = ensemble.predict(X_test_df.copy())
+            probs = pred_df['class_prob'].values
+            ens_auc = float(compute_auc(y_test, probs))
+            y_pred = (probs >= _ANOMALY_THRESHOLD).astype(int)
+            ens_f1 = float(sk_f1_score(y_test, y_pred, pos_label=0, zero_division=0))
+            results[ensemble_label] = (ensemble, ens_auc, ens_f1)
+            logger.info('%s AUC=%.4f  F1=%.4f', ensemble_label, ens_auc, ens_f1)
+        except Exception as exc:
+            logger.warning('Ensemble evaluation failed: %s', exc)
 
     best_name = max(results, key=lambda k: results[k][2])   # select by F1
     best_det, best_auc, best_f1 = results[best_name]

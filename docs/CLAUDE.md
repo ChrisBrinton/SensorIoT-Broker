@@ -244,7 +244,7 @@ Online training pipeline integrated into the REST server. Each gateway gets its 
 - **Feature engineering** (`_add_engineered_features`): cyclic time features (hour sin/cos, day-of-week sin/cos), and per-sensor rolling trend features (delta, rolling mean, rolling std over 6-bucket window)
 - **NOAA integration**: when `NOAASettings.enabled=True` for a gateway, `noaa_forecast_F` is forward-filled and included as a feature; otherwise it is dropped
 - **Bucket size**: computed from median inter-reading interval per node; smallest of `[60, 120, 300, 600, 900, 1800, 3600]` s that covers all nodes
-- **Detectors**: Isolation Forest, One-Class SVM, Negative-Sampling Random Forest (MADI library); winner chosen by AUC
+- **Detectors**: Isolation Forest, One-Class SVM, NS-RandomForest (MADI), LOF, Elliptic Envelope, NS-MLP (scikit-learn); auto-ensemble of top 3; winner chosen by F1
 - **Model storage**: `sensoriot-rest/models/{gateway_id}/model.joblib` + `metadata.json` (`model_type`, `auc`, `feature_columns`, `nodes`, `num_rows`, `trained_at`)
 - Old models (without new feature columns) continue to work — `predict_anomaly` filters `feature_columns` to those present in the current dataframe
 
