@@ -756,6 +756,57 @@ def regression_forecast():
     return json.dumps({'forecast': forecast})
 
 
+@app.route('/regression_forecast_history', methods=['GET'])
+def regression_forecast_history():
+    """Retrieve stored past forecasts for comparison with actuals.
+
+    Query params:
+        gateway_id (required)
+        node_id (required)
+        type (default 'F')
+        hours_back (default 48) — how far back to look for recorded forecasts
+    """
+    gateway_id  = request.args.get('gateway_id', '')
+    node_id     = request.args.get('node_id', '')
+    sensor_type = request.args.get('type', 'F')
+    try:
+        hours_back = int(request.args.get('hours_back', '48'))
+    except (ValueError, TypeError):
+        hours_back = 48
+
+    if not gateway_id or not node_id:
+        return json.dumps({'error': 'gateway_id and node_id required'}), 400
+
+    cutoff = time.time() - hours_back * 3600
+    now = time.time()
+
+    # Find forecasts that were *for* times in [cutoff, now] (past predictions
+    # whose forecast_time has already passed, so we can compare with actuals)
+    docs = list(db.RegressionForecasts.find(
+        {
+            'gateway_id': gateway_id,
+            'node_id': node_id,
+            'type': sensor_type,
+            'forecast_time': {'$gte': cutoff, '$lte': now},
+        },
+        {'_id': 0, 'forecast_time': 1, 'predicted': 1,
+         'recorded_at': 1, 'batch_id': 1},
+    ).sort('forecast_time', 1))
+
+    # For each forecast_time, keep only the most recent prediction (closest
+    # recorded_at to forecast_time = most relevant forecast)
+    best = {}
+    for d in docs:
+        ft = d['forecast_time']
+        if ft not in best or d['recorded_at'] > best[ft]['recorded_at']:
+            best[ft] = d
+
+    result = [{'timestamp': d['forecast_time'], 'predicted': d['predicted']}
+              for d in sorted(best.values(), key=lambda x: x['forecast_time'])]
+
+    return json.dumps({'forecast_history': result})
+
+
 # ---------------------------------------------------------------------------
 # Alert Rules & Device Tokens
 # ---------------------------------------------------------------------------
