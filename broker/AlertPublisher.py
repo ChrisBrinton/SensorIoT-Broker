@@ -354,6 +354,10 @@ def run_once(db, firebase_available: bool) -> None:
               f'type={rule.get("type")!r}, operator={rule.get("operator")!r}, '
               f'threshold={rule.get("threshold")}, push_enabled={push_enabled}')
 
+        # ml_anomaly rules are handled by AnomalyAlertPublisher in appbackend
+        if rule.get('operator') == 'ml_anomaly':
+            continue
+
         # Respect cooldown
         cooldown_remaining = cooldown_min * 60 - (now - last_triggered)
         if cooldown_remaining > 0:
