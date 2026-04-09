@@ -40,26 +40,7 @@ jobs:
             docker build -t sensoriot-mcp_server /opt/sensoriot/repo/mcp_server
 
             echo "==> Updating docker-compose with mcp_server service..."
-            python3 - << 'PYEOF'
-import yaml
-path = '/opt/sensoriot/docker-compose.yml'
-with open(path) as f:
-    cfg = yaml.safe_load(f)
-cfg.setdefault('services', {})['mcp_server'] = {
-    'image': 'sensoriot-mcp_server',
-    'restart': 'unless-stopped',
-    'environment': [
-        'API_BASE_URL=http://rest_server:80',
-        'MCP_HOST=0.0.0.0',
-        'MCP_PORT=8080',
-    ],
-    'networks': ['backend'],
-    'depends_on': ['rest_server'],
-}
-with open(path, 'w') as f:
-    yaml.dump(cfg, f, default_flow_style=False)
-print('docker-compose.yml updated')
-PYEOF
+            python3 -c "import yaml,sys; p='/opt/sensoriot/docker-compose.yml'; cfg=yaml.safe_load(open(p)); svc=cfg.setdefault('services',{}); svc.setdefault('mcp_server',{'image':'sensoriot-mcp_server','restart':'unless-stopped','environment':['API_BASE_URL=http://rest_server:80','MCP_HOST=0.0.0.0','MCP_PORT=8080'],'networks':['backend'],'depends_on':['rest_server']}); open(p,'w').write(yaml.dump(cfg,default_flow_style=False)); print('docker-compose.yml updated')"
 
             echo "==> Restarting services..."
             docker compose down
