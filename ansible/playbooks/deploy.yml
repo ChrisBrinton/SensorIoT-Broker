@@ -33,6 +33,12 @@
         chdir: "{{ repo_root }}/broker"
       when: not skip_build and (target == 'all' or target == 'broker')
 
+    - name: Build mcp_server image
+      command: docker build --platform linux/amd64 -t sensoriot-mcp_server .
+      args:
+        chdir: "{{ repo_root }}/mcp_server"
+      when: not skip_build and (target == 'all' or target == 'mcp')
+
     - name: Save rest_server image
       command: docker save sensoriot-rest_server -o /tmp/sensoriot-rest_server.tar
       when: target == 'all' or target == 'rest'
@@ -48,6 +54,14 @@
     - name: Compress broker image
       command: gzip -f /tmp/sensoriot-broker.tar
       when: target == 'all' or target == 'broker'
+
+    - name: Save mcp_server image
+      command: docker save sensoriot-mcp_server -o /tmp/sensoriot-mcp_server.tar
+      when: target == 'all' or target == 'mcp'
+
+    - name: Compress mcp_server image
+      command: gzip -f /tmp/sensoriot-mcp_server.tar
+      when: target == 'all' or target == 'mcp'
 
 
 - name: Deploy to VPS
@@ -70,6 +84,12 @@
         dest: "/tmp/sensoriot-broker.tar.gz"
       when: target == 'all' or target == 'broker'
 
+    - name: Upload mcp_server image
+      copy:
+        src: /tmp/sensoriot-mcp_server.tar.gz
+        dest: "/tmp/sensoriot-mcp_server.tar.gz"
+      when: target == 'all' or target == 'mcp'
+
     # ── Load images ────────────────────────────────────────────────────────
     - name: Load rest_server image
       shell: gunzip -c /tmp/sensoriot-rest_server.tar.gz | docker load
@@ -78,6 +98,10 @@
     - name: Load broker image
       shell: gunzip -c /tmp/sensoriot-broker.tar.gz | docker load
       when: target == 'all' or target == 'broker'
+
+    - name: Load mcp_server image
+      shell: gunzip -c /tmp/sensoriot-mcp_server.tar.gz | docker load
+      when: target == 'all' or target == 'mcp'
 
     # ── Update configs if needed ───────────────────────────────────────────
     - name: Deploy docker-compose.yml
@@ -108,6 +132,7 @@
       loop:
         - sensoriot-rest_server.tar.gz
         - sensoriot-broker.tar.gz
+        - sensoriot-mcp_server.tar.gz
 
   post_tasks:
     - name: Verify containers are running

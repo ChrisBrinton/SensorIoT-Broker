@@ -19,6 +19,18 @@ services:
     networks:
       - backend
 
+  mcp_server:
+    image: sensoriot-mcp_server
+    restart: unless-stopped
+    environment:
+      - API_BASE_URL=http://rest_server:80
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8080
+    networks:
+      - backend
+    depends_on:
+      - rest_server
+
   broker:
     image: sensoriot-broker
     restart: unless-stopped
