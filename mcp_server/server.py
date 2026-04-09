@@ -348,5 +348,5 @@ def get_heatmap(
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    # Serves at POST /mcp (streamable-http default path)
-    mcp.run(transport="streamable-http", host=MCP_HOST, port=MCP_PORT)
+    # SSE transport: GET /sse for stream, POST /messages/ for client→server
+    mcp.run(transport="sse", host=MCP_HOST, port=MCP_PORT)

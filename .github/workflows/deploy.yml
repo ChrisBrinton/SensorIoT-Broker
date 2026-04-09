@@ -58,4 +58,6 @@ jobs:
 
             echo "==> Deploy complete!"
             docker compose ps
+            echo "==> MCP server logs (last 20 lines)..."
+            docker logs --tail 20 sensoriot-mcp_server-1 2>&1 || true
           DEPLOY
