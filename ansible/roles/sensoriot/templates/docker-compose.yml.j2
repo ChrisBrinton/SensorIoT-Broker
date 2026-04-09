@@ -21,6 +21,7 @@ services:
 
   mcp_server:
     image: sensoriot-mcp_server
+    build: ./repo/mcp_server
     restart: unless-stopped
     environment:
       - API_BASE_URL=http://rest_server:80
