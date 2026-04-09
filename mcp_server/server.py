@@ -9,7 +9,7 @@ API_BASE = os.getenv("API_BASE_URL", "http://rest_server:80")
 MCP_HOST = os.getenv("MCP_HOST", "0.0.0.0")
 MCP_PORT = int(os.getenv("MCP_PORT", "8080"))
 
-mcp = FastMCP("SensorIoT")
+mcp = FastMCP("SensorIoT", host=MCP_HOST, port=MCP_PORT)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -349,4 +349,4 @@ def get_heatmap(
 
 if __name__ == "__main__":
     # SSE transport: GET /sse for stream, POST /messages/ for client→server
-    mcp.run(transport="sse", host=MCP_HOST, port=MCP_PORT)
+    mcp.run(transport="sse")
