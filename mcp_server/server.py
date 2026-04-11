@@ -15,13 +15,22 @@ mcp = FastMCP("SensorIoT", host=MCP_HOST, port=MCP_PORT)
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _get(path: str, params: dict | None = None) -> dict | list | str:
-    resp = httpx.get(f"{API_BASE}{path}", params=params, timeout=30)
-    resp.raise_for_status()
-    try:
+async def _get(path: str, params=None) -> dict | list | str:
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(f"{API_BASE}{path}", params=params, timeout=30)
+        resp.raise_for_status()
+        try:
+            return resp.json()
+        except Exception:
+            return resp.text
+
+
+async def _get_multi(path: str, params: list) -> list:
+    """For endpoints that need repeated query keys (e.g. ?gw=a&gw=b)."""
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(f"{API_BASE}{path}", params=params, timeout=30)
+        resp.raise_for_status()
         return resp.json()
-    except Exception:
-        return resp.text
 
 
 # ---------------------------------------------------------------------------
@@ -29,19 +38,19 @@ def _get(path: str, params: dict | None = None) -> dict | list | str:
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
-def get_stats() -> str:
+async def get_stats() -> str:
     """Return the total number of sensor reading documents stored in the database."""
-    return _get("/stats")
+    return await _get("/stats")
 
 
 @mcp.tool()
-def get_sensor_list() -> list:
+async def get_sensor_list() -> list:
     """Return all distinct node IDs across every gateway."""
-    return _get("/sensorlist")
+    return await _get("/sensorlist")
 
 
 @mcp.tool()
-def get_sensor_data(
+async def get_sensor_data(
     node: str,
     period_days: int = 1,
     skip: int = 0,
@@ -55,22 +64,22 @@ def get_sensor_data(
         skip: Skip every N-th record for downsampling (default 0 = no skip).
         sensor_type: Filter by sensor type, e.g. 'F' for Fahrenheit (default = all types).
     """
-    return _get(f"/sensor/{node}", {"period": period_days, "skip": skip, "type": sensor_type})
+    return await _get(f"/sensor/{node}", {"period": period_days, "skip": skip, "type": sensor_type})
 
 
 @mcp.tool()
-def get_latest(gateway_id: str, period_hours: int = 24) -> list:
+async def get_latest(gateway_id: str, period_hours: int = 24) -> list:
     """Return the latest reading for every sensor on a gateway.
 
     Args:
         gateway_id: The gateway identifier.
         period_hours: Only include sensors active within this many hours (default 24).
     """
-    return _get(f"/latest/{gateway_id}", {"period": period_hours})
+    return await _get(f"/latest/{gateway_id}", {"period": period_hours})
 
 
 @mcp.tool()
-def get_latests(gateway_ids: list[str], period_hours: int = 1) -> list:
+async def get_latests(gateway_ids: list[str], period_hours: int = 1) -> list:
     """Return latest readings across multiple gateways in one call.
 
     Args:
@@ -78,24 +87,22 @@ def get_latests(gateway_ids: list[str], period_hours: int = 1) -> list:
         period_hours: Activity window in hours (default 1).
     """
     params = [("gw", gw) for gw in gateway_ids] + [("period", period_hours)]
-    resp = httpx.get(f"{API_BASE}/latests", params=params, timeout=30)
-    resp.raise_for_status()
-    return resp.json()
+    return await _get_multi("/latests", params)
 
 
 @mcp.tool()
-def get_node_list(gateway_id: str, period_days: int = 1) -> list:
+async def get_node_list(gateway_id: str, period_days: int = 1) -> list:
     """Return the list of node IDs that were active on a gateway within a time window.
 
     Args:
         gateway_id: The gateway identifier.
         period_days: Lookback window in days (default 1).
     """
-    return _get(f"/nodelist/{gateway_id}", {"period": period_days})
+    return await _get(f"/nodelist/{gateway_id}", {"period": period_days})
 
 
 @mcp.tool()
-def get_node_lists(gateway_ids: list[str], period_days: int = 1) -> list:
+async def get_node_lists(gateway_ids: list[str], period_days: int = 1) -> list:
     """Return active node lists for multiple gateways in one call.
 
     Args:
@@ -103,13 +110,11 @@ def get_node_lists(gateway_ids: list[str], period_days: int = 1) -> list:
         period_days: Lookback window in days (default 1).
     """
     params = [("gw", gw) for gw in gateway_ids] + [("period", period_days)]
-    resp = httpx.get(f"{API_BASE}/nodelists", params=params, timeout=30)
-    resp.raise_for_status()
-    return resp.json()
+    return await _get_multi("/nodelists", params)
 
 
 @mcp.tool()
-def get_gateway_data(
+async def get_gateway_data(
     gateway_id: str,
     nodes: list[str],
     sensor_type: str = "",
@@ -129,9 +134,7 @@ def get_gateway_data(
         [("node", n) for n in nodes]
         + [("type", sensor_type), ("period", period_days), ("timezone", timezone)]
     )
-    resp = httpx.get(f"{API_BASE}/gw/{gateway_id}", params=params, timeout=60)
-    resp.raise_for_status()
-    return resp.json()
+    return await _get_multi(f"/gw/{gateway_id}", params)
 
 
 # ---------------------------------------------------------------------------
@@ -139,16 +142,14 @@ def get_gateway_data(
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
-def get_nicknames(gateway_ids: list[str]) -> list:
+async def get_nicknames(gateway_ids: list[str]) -> list:
     """Return sensor and gateway display names for one or more gateways.
 
     Args:
         gateway_ids: List of gateway identifiers.
     """
     params = [("gw", gw) for gw in gateway_ids]
-    resp = httpx.get(f"{API_BASE}/get_nicknames", params=params, timeout=15)
-    resp.raise_for_status()
-    return resp.json()
+    return await _get_multi("/get_nicknames", params)
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +157,7 @@ def get_nicknames(gateway_ids: list[str]) -> list:
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
-def get_forecast(
+async def get_forecast(
     gateway_id: str,
     node: str = "noaa_forecast",
     sensor_type: str = "F",
@@ -170,7 +171,7 @@ def get_forecast(
         sensor_type: Sensor type filter (default 'F' = Fahrenheit).
         hours_back: Also include records this many hours into the past (default 0 = future only).
     """
-    return _get(f"/forecast/{gateway_id}", {
+    return await _get(f"/forecast/{gateway_id}", {
         "node": node, "type": sensor_type, "hours_back": hours_back,
     })
 
@@ -180,27 +181,27 @@ def get_forecast(
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
-def get_anomaly_training_status(job_id: str) -> dict:
+async def get_anomaly_training_status(job_id: str) -> dict:
     """Poll the status of an anomaly model training job.
 
     Args:
         job_id: UUID returned by the train_anomaly_model endpoint.
     """
-    return _get("/training_status", {"job_id": job_id})
+    return await _get("/training_status", {"job_id": job_id})
 
 
 @mcp.tool()
-def get_anomaly_model_status(gateway_id: str) -> dict:
+async def get_anomaly_model_status(gateway_id: str) -> dict:
     """Return metadata for the trained anomaly model of a gateway.
 
     Args:
         gateway_id: The gateway identifier.
     """
-    return _get("/anomaly_model_status", {"gateway_id": gateway_id})
+    return await _get("/anomaly_model_status", {"gateway_id": gateway_id})
 
 
 @mcp.tool()
-def predict_anomaly(
+async def predict_anomaly(
     gateway_id: str,
     node_id: str,
     period_days: int = 7,
@@ -212,7 +213,7 @@ def predict_anomaly(
         node_id: The node identifier.
         period_days: How many days of data to run the detector over (default 7).
     """
-    return _get("/predict_anomaly", {
+    return await _get("/predict_anomaly", {
         "gateway_id": gateway_id, "node_id": node_id, "period": period_days,
     })
 
@@ -222,27 +223,27 @@ def predict_anomaly(
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
-def get_regression_training_status(job_id: str) -> dict:
+async def get_regression_training_status(job_id: str) -> dict:
     """Poll the status of a regression model training job.
 
     Args:
         job_id: UUID returned by the train_regression_model endpoint.
     """
-    return _get("/regression_training_status", {"job_id": job_id})
+    return await _get("/regression_training_status", {"job_id": job_id})
 
 
 @mcp.tool()
-def get_regression_model_status(gateway_id: str) -> dict:
+async def get_regression_model_status(gateway_id: str) -> dict:
     """Return metadata for all regression models trained for a gateway.
 
     Args:
         gateway_id: The gateway identifier.
     """
-    return _get("/regression_model_status", {"gateway_id": gateway_id})
+    return await _get("/regression_model_status", {"gateway_id": gateway_id})
 
 
 @mcp.tool()
-def get_regression_forecast(
+async def get_regression_forecast(
     gateway_id: str,
     node_id: str,
     sensor_type: str = "F",
@@ -256,14 +257,14 @@ def get_regression_forecast(
         sensor_type: Sensor type to forecast (default 'F').
         hours: How many hours ahead to forecast (default 48).
     """
-    return _get("/regression_forecast", {
+    return await _get("/regression_forecast", {
         "gateway_id": gateway_id, "node_id": node_id,
         "type": sensor_type, "hours": hours,
     })
 
 
 @mcp.tool()
-def get_regression_forecast_history(
+async def get_regression_forecast_history(
     gateway_id: str,
     node_id: str,
     sensor_type: str = "F",
@@ -277,7 +278,7 @@ def get_regression_forecast_history(
         sensor_type: Sensor type (default 'F').
         hours_back: How far back to retrieve recorded forecasts (default 48).
     """
-    return _get("/regression_forecast_history", {
+    return await _get("/regression_forecast_history", {
         "gateway_id": gateway_id, "node_id": node_id,
         "type": sensor_type, "hours_back": hours_back,
     })
@@ -288,7 +289,7 @@ def get_regression_forecast_history(
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
-def get_baseline(gateway_id: str, node: str, sensor_type: str = "F") -> list:
+async def get_baseline(gateway_id: str, node: str, sensor_type: str = "F") -> list:
     """Return the saved per-hour-of-week baseline buckets for a sensor.
 
     Args:
@@ -296,11 +297,11 @@ def get_baseline(gateway_id: str, node: str, sensor_type: str = "F") -> list:
         node: The node identifier.
         sensor_type: Sensor type (default 'F').
     """
-    return _get(f"/baseline/{gateway_id}", {"node": node, "type": sensor_type})
+    return await _get(f"/baseline/{gateway_id}", {"node": node, "type": sensor_type})
 
 
 @mcp.tool()
-def get_baseline_status(
+async def get_baseline_status(
     gateway_id: str,
     node: Optional[str] = None,
     sensor_type: str = "F",
@@ -315,7 +316,7 @@ def get_baseline_status(
     params: dict = {"type": sensor_type}
     if node:
         params["node"] = node
-    return _get(f"/baseline_status/{gateway_id}", params)
+    return await _get(f"/baseline_status/{gateway_id}", params)
 
 
 # ---------------------------------------------------------------------------
@@ -323,7 +324,7 @@ def get_baseline_status(
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
-def get_heatmap(
+async def get_heatmap(
     gateway_id: str,
     node: str,
     sensor_type: str = "F",
@@ -340,7 +341,7 @@ def get_heatmap(
     params: dict = {"node": node, "type": sensor_type}
     if year is not None:
         params["year"] = year
-    return _get(f"/heatmap/{gateway_id}", params)
+    return await _get(f"/heatmap/{gateway_id}", params)
 
 
 # ---------------------------------------------------------------------------
