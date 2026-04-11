@@ -24,7 +24,7 @@ services:
     build: ./repo/mcp_server
     restart: unless-stopped
     environment:
-      - API_BASE_URL=http://rest_server:80
+      - API_BASE_URL=http://rest_server:5050
       - MCP_HOST=0.0.0.0
       - MCP_PORT=8080
     networks:
